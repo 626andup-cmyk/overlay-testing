@@ -54,32 +54,43 @@ export function setup(ctx) {
    * learn how fragile this is rather than guessing.
    */
   function findInputBar() {
-    // Strategy A: the message composer itself, then walk up to its bar container.
+    const vv = window.visualViewport
+    const viewportH = vv ? vv.height : window.innerHeight
+
+    // Find the composer field: visible, wide, in the lower half of the screen.
     const fields = document.querySelectorAll(
       'textarea, input[type="text"], [contenteditable="true"]'
     )
     let composer = null
     for (let i = 0; i < fields.length; i++) {
       const r = fields[i].getBoundingClientRect()
-      // must be visible and sitting in the lower part of the screen
-      if (r.width > 80 && r.height > 10 && r.top > window.innerHeight * 0.5) {
+      if (r.width > 80 && r.height > 10 && r.top > viewportH * 0.4) {
         composer = fields[i]
         break
       }
     }
-    if (composer) {
-      // Walk up until the element spans most of the viewport width — that's the bar.
-      let node = composer
-      for (let depth = 0; depth < 6 && node.parentElement; depth++) {
-        const pr = node.parentElement.getBoundingClientRect()
-        if (pr.width >= window.innerWidth * 0.9 && pr.height < window.innerHeight * 0.5) {
-          return { el: node.parentElement, how: 'composer+walkup(' + depth + ')' }
-        }
-        node = node.parentElement
+    if (!composer) return { el: null, how: 'NOT FOUND', depth: -1 }
+
+    // Walk UP and keep the OUTERMOST ancestor that still looks like the
+    // input bar: full width, anchored to the bottom of the visible viewport,
+    // and not so tall that we've grabbed the whole page.
+    let best = null
+    let bestDepth = -1
+    let node = composer
+    for (let depth = 0; depth < 8 && node.parentElement; depth++) {
+      node = node.parentElement
+      const r = node.getBoundingClientRect()
+      const fullWidth = r.width >= window.innerWidth * 0.9
+      const bottomAnchored = r.bottom >= viewportH - 16
+      const notTooTall = r.height <= viewportH * 0.4
+      if (fullWidth && bottomAnchored && notTooTall) {
+        best = node
+        bestDepth = depth
       }
-      return { el: composer, how: 'composer(no container found)' }
     }
-    return { el: null, how: 'NOT FOUND' }
+
+    if (best) return { el: best, how: 'walkup(' + bestDepth + ')', depth: bestDepth }
+    return { el: composer, how: 'composer only', depth: -1 }
   }
 
   let lastHow = ''
@@ -114,7 +125,7 @@ export function setup(ctx) {
       badge.textContent =
         'probe3\n' +
         'found: ' + lastHow + '\n' +
-        'bar top: ' + barTop + '  h: ' + barH + '\n' +
+        'bar top: ' + barTop + '  barH: ' + barH + '\n' +
         'innerH: ' + window.innerHeight + '  visualH: ' + Math.round(viewportH) + '\n' +
         'overlay bottom: ' + bottomGap + 'px'
     }
