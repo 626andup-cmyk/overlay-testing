@@ -1,17 +1,21 @@
 // src/frontend.ts
 function setup(ctx) {
-  console.log("[probe3] setup() called");
-  const removeStyle = ctx.dom.addStyle(
-    ".probe-badge{position:fixed;bottom:8px;left:8px;max-width:70vw;padding:8px 10px;background:rgba(20,20,28,.92);border:2px solid #a855f7;border-radius:10px;font-size:11px;line-height:1.4;color:#fff;z-index:2147483647;pointer-events:none;white-space:pre-line;font-family:ui-monospace,monospace}.probe-fit{position:fixed;left:0;right:0;top:0;background:rgba(168,85,247,.20);border:3px dashed rgba(168,85,247,.95);box-sizing:border-box;pointer-events:none;display:flex;align-items:flex-end;justify-content:center}.probe-fit span{margin-bottom:6px;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;font-weight:700}"
+  console.log("[probe4] setup() called");
+  var removeStyle = ctx.dom.addStyle(
+    ".p4-badge{position:fixed;bottom:6px;left:6px;max-width:72vw;padding:6px 9px;background:rgba(20,20,28,.94);border:2px solid #a855f7;border-radius:9px;font-size:10px;line-height:1.35;color:#fff;z-index:2147483647;pointer-events:none;white-space:pre-line;font-family:ui-monospace,monospace}.p4-fit{position:fixed;left:0;right:0;top:0;box-sizing:border-box;pointer-events:none;display:flex;flex-direction:column;background:rgba(12,10,20,.97)}.p4-head{flex:0 0 auto;padding:6px 10px;font-size:11px;color:#c4b5fd;border-bottom:1px solid rgba(168,85,247,.35);font-family:ui-monospace,monospace}.p4-list{flex:1 1 auto;overflow-y:auto;padding:8px 10px 40px;pointer-events:auto;-webkit-overflow-scrolling:touch}.p4-msg{margin:0 0 10px;padding:8px 11px;border-radius:14px;font-size:14px;line-height:1.45;max-width:82%;word-wrap:break-word;white-space:pre-wrap}.p4-msg.user{margin-left:auto;background:#3b2f63;color:#fff;border-bottom-right-radius:4px}.p4-msg.assistant{margin-right:auto;background:#1e1b2e;color:#e9e4ff;border-bottom-left-radius:4px}.p4-name{font-size:10px;opacity:.65;margin:0 4px 3px}"
   );
-  ctx.dom.inject("body", '<div class="probe-badge">probe3 starting...</div>');
-  const badge = ctx.dom.query(".probe-badge");
-  let mount = null;
-  let fitEl = null;
+  ctx.dom.inject("body", '<div class="p4-badge">probe4 starting...</div>');
+  var badge = ctx.dom.query(".p4-badge");
+  var mount = null;
+  var fitEl = null;
+  var listEl = null;
+  var headEl = null;
   try {
-    mount = ctx.ui.mountApp({ className: "probe3-mount", position: "app-overlay" });
-    mount.root.innerHTML = '<div class="probe-fit"><span>chat area would go here</span></div>';
-    fitEl = mount.root.querySelector(".probe-fit");
+    mount = ctx.ui.mountApp({ className: "p4-mount", position: "app-overlay" });
+    mount.root.innerHTML = '<div class="p4-fit"><div class="p4-head">probe4 \u2014 mirrored transcript</div><div class="p4-list"></div></div>';
+    fitEl = mount.root.querySelector(".p4-fit");
+    listEl = mount.root.querySelector(".p4-list");
+    headEl = mount.root.querySelector(".p4-head");
   } catch (err) {
     if (badge) badge.textContent = "mountApp FAILED: " + (err && err.message);
     return function() {
@@ -20,60 +24,49 @@ function setup(ctx) {
     };
   }
   function findInputBar() {
-    const vv = window.visualViewport;
-    const viewportH = vv ? vv.height : window.innerHeight;
-    const fields = document.querySelectorAll(
+    var vv = window.visualViewport;
+    var viewportH = vv ? vv.height : window.innerHeight;
+    var fields = document.querySelectorAll(
       'textarea, input[type="text"], [contenteditable="true"]'
     );
-    let composer = null;
-    for (let i = 0; i < fields.length; i++) {
-      const r = fields[i].getBoundingClientRect();
+    var composer = null;
+    for (var i = 0; i < fields.length; i++) {
+      var r = fields[i].getBoundingClientRect();
       if (r.width > 80 && r.height > 10 && r.top > viewportH * 0.4) {
         composer = fields[i];
         break;
       }
     }
-    if (!composer) return { el: null, how: "NOT FOUND", depth: -1 };
-    let best = null;
-    let bestDepth = -1;
-    let node = composer;
-    for (let depth = 0; depth < 8 && node.parentElement; depth++) {
+    if (!composer) return { el: null, how: "NOT FOUND" };
+    var best = null;
+    var bestDepth = -1;
+    var node = composer;
+    for (var depth = 0; depth < 8 && node.parentElement; depth++) {
       node = node.parentElement;
-      const r = node.getBoundingClientRect();
-      const fullWidth = r.width >= window.innerWidth * 0.9;
-      const bottomAnchored = r.bottom >= viewportH - 16;
-      const notTooTall = r.height <= viewportH * 0.4;
-      if (fullWidth && bottomAnchored && notTooTall) {
+      var pr = node.getBoundingClientRect();
+      if (pr.width >= window.innerWidth * 0.9 && pr.bottom >= viewportH - 16 && pr.height <= viewportH * 0.4) {
         best = node;
         bestDepth = depth;
       }
     }
-    if (best) return { el: best, how: "walkup(" + bestDepth + ")", depth: bestDepth };
-    return { el: composer, how: "composer only", depth: -1 };
+    if (best) return { el: best, how: "walkup(" + bestDepth + ")" };
+    return { el: composer, how: "composer only" };
   }
-  let lastHow = "";
+  var geoLine = "";
   function fit() {
-    const found = findInputBar();
-    lastHow = found.how;
-    const vv = window.visualViewport;
-    const viewportH = vv ? vv.height : window.innerHeight;
-    let bottomGap = 0;
-    let barTop = null;
-    let barH = null;
+    var found = findInputBar();
+    var vv = window.visualViewport;
+    var viewportH = vv ? vv.height : window.innerHeight;
+    var gap = 0;
     if (found.el) {
-      const r = found.el.getBoundingClientRect();
-      barTop = Math.round(r.top);
-      barH = Math.round(r.height);
-      bottomGap = Math.max(0, Math.round(viewportH - r.top));
+      var r = found.el.getBoundingClientRect();
+      gap = Math.max(0, Math.round(viewportH - r.top));
     }
     if (fitEl) {
-      fitEl.style.bottom = bottomGap + "px";
+      fitEl.style.bottom = gap + "px";
       fitEl.style.top = "0px";
     }
-    if (badge) {
-      badge.textContent = "probe3\nfound: " + lastHow + "\nbar top: " + barTop + "  barH: " + barH + "\ninnerH: " + window.innerHeight + "  visualH: " + Math.round(viewportH) + "\noverlay bottom: " + bottomGap + "px";
-    }
-    console.log("[probe3] fit", { how: lastHow, barTop, bottomGap });
+    geoLine = "geo: " + found.how + " gap:" + gap;
   }
   fit();
   window.addEventListener("resize", fit);
@@ -82,9 +75,66 @@ function setup(ctx) {
     window.visualViewport.addEventListener("resize", fit);
     window.visualViewport.addEventListener("scroll", fit);
   }
-  const poll = setInterval(fit, 1e3);
+  var poll = setInterval(fit, 1e3);
+  var sendHow = "none";
+  var lastResult = "not requested yet";
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function renderMessages(msgs) {
+    if (!listEl) return;
+    var html = "";
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var cls = m.role === "user" ? "user" : "assistant";
+      html += '<div class="p4-name" style="text-align:' + (cls === "user" ? "right" : "left") + '">' + escapeHtml(m.role) + '</div><div class="p4-msg ' + cls + '">' + escapeHtml(m.content) + "</div>";
+    }
+    listEl.innerHTML = html;
+    listEl.scrollTop = listEl.scrollHeight;
+  }
+  function renderBadge() {
+    if (!badge) return;
+    badge.textContent = "probe4\n" + geoLine + "\nsend: " + sendHow + "\n" + lastResult;
+  }
+  async function requestHistory() {
+    var payload = { type: "get_history" };
+    try {
+      var res = null;
+      if (typeof ctx.sendToBackend === "function") {
+        sendHow = "ctx.sendToBackend";
+        res = await ctx.sendToBackend(payload);
+      } else if (ctx.backend && typeof ctx.backend.send === "function") {
+        sendHow = "ctx.backend.send";
+        res = await ctx.backend.send(payload);
+      } else {
+        sendHow = "NO SEND FN FOUND";
+        lastResult = "frontend has no backend-send function";
+        renderBadge();
+        return;
+      }
+      console.log("[probe4] backend replied:", res);
+      if (!res) {
+        lastResult = "reply was empty/undefined";
+      } else if (res.ok) {
+        lastResult = "OK " + res.count + " msgs (showing " + res.messages.length + ")";
+        renderMessages(res.messages);
+        if (headEl) headEl.textContent = "probe4 \u2014 " + res.count + " messages in chat";
+      } else {
+        lastResult = "backend error: " + res.error + " [" + res.how + "]";
+      }
+    } catch (e) {
+      lastResult = "send threw: " + String(e && e.message || e);
+    }
+    renderBadge();
+  }
+  renderBadge();
+  setTimeout(requestHistory, 1200);
+  var refresh = setInterval(requestHistory, 6e3);
   return function() {
     clearInterval(poll);
+    clearInterval(refresh);
     window.removeEventListener("resize", fit);
     window.removeEventListener("orientationchange", fit);
     if (window.visualViewport) {
