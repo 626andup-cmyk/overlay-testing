@@ -20,29 +20,36 @@ function setup(ctx) {
     };
   }
   function findInputBar() {
+    const vv = window.visualViewport;
+    const viewportH = vv ? vv.height : window.innerHeight;
     const fields = document.querySelectorAll(
       'textarea, input[type="text"], [contenteditable="true"]'
     );
     let composer = null;
     for (let i = 0; i < fields.length; i++) {
       const r = fields[i].getBoundingClientRect();
-      if (r.width > 80 && r.height > 10 && r.top > window.innerHeight * 0.5) {
+      if (r.width > 80 && r.height > 10 && r.top > viewportH * 0.4) {
         composer = fields[i];
         break;
       }
     }
-    if (composer) {
-      let node = composer;
-      for (let depth = 0; depth < 6 && node.parentElement; depth++) {
-        const pr = node.parentElement.getBoundingClientRect();
-        if (pr.width >= window.innerWidth * 0.9 && pr.height < window.innerHeight * 0.5) {
-          return { el: node.parentElement, how: "composer+walkup(" + depth + ")" };
-        }
-        node = node.parentElement;
+    if (!composer) return { el: null, how: "NOT FOUND", depth: -1 };
+    let best = null;
+    let bestDepth = -1;
+    let node = composer;
+    for (let depth = 0; depth < 8 && node.parentElement; depth++) {
+      node = node.parentElement;
+      const r = node.getBoundingClientRect();
+      const fullWidth = r.width >= window.innerWidth * 0.9;
+      const bottomAnchored = r.bottom >= viewportH - 16;
+      const notTooTall = r.height <= viewportH * 0.4;
+      if (fullWidth && bottomAnchored && notTooTall) {
+        best = node;
+        bestDepth = depth;
       }
-      return { el: composer, how: "composer(no container found)" };
     }
-    return { el: null, how: "NOT FOUND" };
+    if (best) return { el: best, how: "walkup(" + bestDepth + ")", depth: bestDepth };
+    return { el: composer, how: "composer only", depth: -1 };
   }
   let lastHow = "";
   function fit() {
@@ -64,7 +71,7 @@ function setup(ctx) {
       fitEl.style.top = "0px";
     }
     if (badge) {
-      badge.textContent = "probe3\nfound: " + lastHow + "\nbar top: " + barTop + "  h: " + barH + "\ninnerH: " + window.innerHeight + "  visualH: " + Math.round(viewportH) + "\noverlay bottom: " + bottomGap + "px";
+      badge.textContent = "probe3\nfound: " + lastHow + "\nbar top: " + barTop + "  barH: " + barH + "\ninnerH: " + window.innerHeight + "  visualH: " + Math.round(viewportH) + "\noverlay bottom: " + bottomGap + "px";
     }
     console.log("[probe3] fit", { how: lastHow, barTop, bottomGap });
   }
