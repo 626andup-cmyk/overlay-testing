@@ -1,240 +1,137 @@
 /**
- * Probe v5 frontend — enumerate ctx, find the chat id, receive a reply.
+ * Probe v5 backend — STOP GUESSING. Enumerate the real API surface.
  *
- * Confirmed already: mountApp works, geometry fits above the input bar,
- * ctx.sendToBackend delivers (but is fire-and-forget).
+ * v4 proved: worker runs, spindle.onFrontendMessage registers, requests
+ * arrive. What it did NOT prove is how to send a reply BACK, because
+ * ctx.sendToBackend is fire-and-forget (it ignored our return value).
  *
- * Unknown: how replies come back, and where the chat id lives. So this
- * prints ctx's key list and the URL straight onto the badge, subscribes to
- * every plausible inbound channel, and sends a chatId parsed from the URL.
+ * So instead of guessing another function name, this dumps every key on
+ * `spindle` and its sub-objects into the Termux log. One look and we know
+ * the entire vocabulary available to us.
  */
-export function setup(ctx) {
-  console.log('[probe5] setup() called')
 
-  var removeStyle = ctx.dom.addStyle(
-    '.p5-badge{position:fixed;bottom:6px;left:6px;right:6px;max-height:38vh;' +
-      'overflow-y:auto;padding:7px 9px;background:rgba(10,8,18,.97);' +
-      'border:2px solid #a855f7;border-radius:9px;font-size:9.5px;' +
-      'line-height:1.35;color:#fff;z-index:2147483647;pointer-events:auto;' +
-      'white-space:pre-wrap;font-family:ui-monospace,monospace;' +
-      'word-break:break-all}' +
-      '.p5-fit{position:fixed;left:0;right:0;top:0;box-sizing:border-box;' +
-      'pointer-events:none;display:flex;flex-direction:column;' +
-      'background:rgba(12,10,20,.97)}' +
-      '.p5-head{flex:0 0 auto;padding:5px 10px;font-size:11px;color:#c4b5fd;' +
-      'border-bottom:1px solid rgba(168,85,247,.35);font-family:ui-monospace,monospace}' +
-      '.p5-list{flex:1 1 auto;overflow-y:auto;padding:8px 10px 42vh;' +
-      'pointer-events:auto;-webkit-overflow-scrolling:touch}' +
-      '.p5-msg{margin:0 0 9px;padding:8px 11px;border-radius:14px;font-size:14px;' +
-      'line-height:1.45;max-width:82%;word-wrap:break-word;white-space:pre-wrap}' +
-      '.p5-msg.user{margin-left:auto;background:#3b2f63;color:#fff}' +
-      '.p5-msg.assistant{margin-right:auto;background:#1e1b2e;color:#e9e4ff}'
-  )
+console.log('[probe5:backend] ===== API SURFACE DUMP =====')
 
-  ctx.dom.inject('body', '<div class="p5-badge">probe5 starting...</div>')
-  var badge = ctx.dom.query('.p5-badge')
+var api = spindle
 
-  var mount = null
-  var fitEl = null
-  var listEl = null
-  var headEl = null
+function dump(label, obj) {
+  if (!obj) {
+    console.log('[probe5] ' + label + ' = ' + String(obj))
+    return
+  }
+  var out = []
+  for (var k in obj) {
+    var t = 'unknown'
+    try {
+      t = typeof obj[k]
+    } catch (e) {
+      t = 'threw'
+    }
+    out.push(k + ':' + t)
+  }
+  // Own keys too, in case the for-in missed non-enumerables.
   try {
-    mount = ctx.ui.mountApp({ className: 'p5-mount', position: 'app-overlay' })
-    mount.root.innerHTML =
-      '<div class="p5-fit"><div class="p5-head">probe5</div><div class="p5-list"></div></div>'
-    fitEl = mount.root.querySelector('.p5-fit')
-    listEl = mount.root.querySelector('.p5-list')
-    headEl = mount.root.querySelector('.p5-head')
-  } catch (err) {
-    if (badge) badge.textContent = 'mountApp FAILED: ' + (err && err.message)
-    return function () {
-      removeStyle()
-      ctx.dom.cleanup()
-    }
+    var own = Object.getOwnPropertyNames(obj)
+    console.log('[probe5] ' + label + ' ownProps = ' + own.join(', '))
+  } catch (e) {}
+  console.log('[probe5] ' + label + ' = ' + out.join(', '))
+}
+
+dump('spindle', api)
+dump('spindle.chat', api && api.chat)
+dump('spindle.chats', api && api.chats)
+dump('spindle.frontend', api && api.frontend)
+dump('spindle.ui', api && api.ui)
+dump('spindle.settings', api && api.settings)
+dump('spindle.generate', api && api.generate)
+dump('spindle.log', api && api.log)
+
+console.log('[probe5:backend] ===== END DUMP =====')
+
+var activeChatId = null
+
+try {
+  api.on('CHAT_SWITCHED', function (payload) {
+    activeChatId = payload && payload.chatId ? payload.chatId : null
+    console.log('[probe5] CHAT_SWITCHED ->', activeChatId)
+  })
+} catch (e) {
+  console.log('[probe5] CHAT_SWITCHED subscribe failed: ' + String(e))
+}
+
+// Some builds expose the active chat through settings; try to read it once.
+try {
+  if (api.settings && typeof api.settings.get === 'function') {
+    Promise.resolve(api.settings.get('activeChatId'))
+      .then(function (v) {
+        console.log('[probe5] settings.get(activeChatId) =', JSON.stringify(v))
+      })
+      .catch(function (e) {
+        console.log('[probe5] settings.get threw: ' + String(e))
+      })
   }
+} catch (e) {
+  console.log('[probe5] settings probe threw: ' + String(e))
+}
 
-  // ---- what is actually on ctx? ------------------------------------------
-  function keysOf(o) {
-    if (!o) return String(o)
-    var out = []
-    for (var k in o) {
-      var t
-      try {
-        t = typeof o[k]
-      } catch (e) {
-        t = '?'
-      }
-      out.push(k + ':' + t.charAt(0))
-    }
-    return out.join(' ')
-  }
-
-  var ctxKeys = keysOf(ctx)
-  console.log('[probe5] ctx keys:', ctxKeys)
-  console.log('[probe5] ctx.chat:', keysOf(ctx.chat))
-  console.log('[probe5] ctx.events:', keysOf(ctx.events))
-  console.log('[probe5] url:', location.href)
-
-  // ---- where is the chat id? ---------------------------------------------
-  // Look for a UUID anywhere in the URL (path or query).
-  function chatIdFromUrl() {
-    var m = location.href.match(
-      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
-    )
-    return m ? m[0] : null
-  }
-
-  // ---- geometry (confirmed) ----------------------------------------------
-  function findInputBar() {
-    var vv = window.visualViewport
-    var vh = vv ? vv.height : window.innerHeight
-    var fields = document.querySelectorAll(
-      'textarea, input[type="text"], [contenteditable="true"]'
-    )
-    var composer = null
-    for (var i = 0; i < fields.length; i++) {
-      var r = fields[i].getBoundingClientRect()
-      if (r.width > 80 && r.height > 10 && r.top > vh * 0.4) {
-        composer = fields[i]
-        break
-      }
-    }
-    if (!composer) return { el: null, how: 'NOT FOUND' }
-    var best = null
-    var bd = -1
-    var node = composer
-    for (var d = 0; d < 8 && node.parentElement; d++) {
-      node = node.parentElement
-      var pr = node.getBoundingClientRect()
-      if (
-        pr.width >= window.innerWidth * 0.9 &&
-        pr.bottom >= vh - 16 &&
-        pr.height <= vh * 0.4
-      ) {
-        best = node
-        bd = d
-      }
-    }
-    return best ? { el: best, how: 'walkup(' + bd + ')' } : { el: composer, how: 'composer' }
-  }
-
-  var geoLine = ''
-  function fit() {
-    var f = findInputBar()
-    var vv = window.visualViewport
-    var vh = vv ? vv.height : window.innerHeight
-    var gap = 0
-    if (f.el) gap = Math.max(0, Math.round(vh - f.el.getBoundingClientRect().top))
-    if (fitEl) {
-      fitEl.style.bottom = gap + 'px'
-      fitEl.style.top = '0px'
-    }
-    geoLine = 'geo ' + f.how + ' gap:' + gap
-  }
-  fit()
-  window.addEventListener('resize', fit)
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', fit)
-    window.visualViewport.addEventListener('scroll', fit)
-  }
-  var poll = setInterval(fit, 1000)
-
-  // ---- inbound: subscribe to every plausible reply channel ---------------
-  var inboundHow = []
-  var lastReply = 'none yet'
-
-  function escapeHtml(s) {
-    var d = document.createElement('div')
-    d.textContent = s
-    return d.innerHTML
-  }
-
-  function handleReply(data) {
-    console.log('[probe5] REPLY RECEIVED:', data)
-    if (!data) {
-      lastReply = 'reply: empty'
-    } else if (data.ok) {
-      lastReply = 'reply OK ' + data.count + ' msgs'
-      var html = ''
-      for (var i = 0; i < data.messages.length; i++) {
-        var m = data.messages[i]
-        html +=
-          '<div class="p5-msg ' +
-          (m.role === 'user' ? 'user' : 'assistant') +
-          '">' +
-          escapeHtml(m.content) +
-          '</div>'
-      }
-      if (listEl) {
-        listEl.innerHTML = html
-        listEl.scrollTop = listEl.scrollHeight
-      }
-      if (headEl) headEl.textContent = 'probe5 — ' + data.count + ' messages'
-    } else {
-      lastReply = 'reply ERR: ' + data.error
-    }
-    render()
-  }
-
-  var inboundCandidates = [
-    ['ctx.onBackendMessage', ctx.onBackendMessage, ctx],
-    ['ctx.backend.onMessage', ctx.backend && ctx.backend.onMessage, ctx.backend],
-    ['ctx.onMessage', ctx.onMessage, ctx],
+/** Try every plausible way to push data to the frontend; report what exists. */
+function replyToFrontend(data) {
+  var tried = []
+  var candidates = [
+    ['spindle.sendToFrontend', api && api.sendToFrontend, api],
+    ['spindle.emitToFrontend', api && api.emitToFrontend, api],
+    ['spindle.frontend.send', api && api.frontend && api.frontend.send, api && api.frontend],
+    ['spindle.frontend.emit', api && api.frontend && api.frontend.emit, api && api.frontend],
+    ['spindle.ui.send', api && api.ui && api.ui.send, api && api.ui],
+    ['spindle.emit', api && api.emit, api],
   ]
-  for (var i = 0; i < inboundCandidates.length; i++) {
-    var nm = inboundCandidates[i][0]
-    var fn = inboundCandidates[i][1]
-    var ta = inboundCandidates[i][2]
+  for (var i = 0; i < candidates.length; i++) {
+    var name = candidates[i][0]
+    var fn = candidates[i][1]
+    var thisArg = candidates[i][2]
     if (typeof fn === 'function') {
       try {
-        fn.call(ta, handleReply)
-        inboundHow.push(nm + ' OK')
+        fn.call(thisArg, data)
+        console.log('[probe5] replied via ' + name)
+        return name
       } catch (e) {
-        inboundHow.push(nm + ' threw')
+        tried.push(name + ' threw:' + String(e && e.message))
       }
     } else {
-      inboundHow.push(nm + ' missing')
+      tried.push(name + ' missing')
     }
   }
-  console.log('[probe5] inbound channels:', inboundHow.join(' | '))
-
-  function render() {
-    if (!badge) return
-    badge.textContent =
-      'probe5\n' +
-      geoLine +
-      '\nURL: ' + location.href.slice(-70) +
-      '\nchatId guess: ' + chatIdFromUrl() +
-      '\ninbound: ' + inboundHow.join(' | ') +
-      '\n' + lastReply +
-      '\n--- ctx keys ---\n' + ctxKeys +
-      '\n--- ctx.chat ---\n' + keysOf(ctx.chat)
-  }
-
-  function ask() {
-    var id = chatIdFromUrl()
-    try {
-      ctx.sendToBackend({ type: 'get_history', chatId: id })
-    } catch (e) {
-      lastReply = 'send threw: ' + String(e && e.message)
-    }
-    render()
-  }
-
-  render()
-  setTimeout(ask, 1500)
-  var refresh = setInterval(ask, 8000)
-
-  return function () {
-    clearInterval(poll)
-    clearInterval(refresh)
-    window.removeEventListener('resize', fit)
-    if (window.visualViewport) {
-      window.visualViewport.removeEventListener('resize', fit)
-      window.visualViewport.removeEventListener('scroll', fit)
-    }
-    if (mount) mount.destroy()
-    removeStyle()
-    ctx.dom.cleanup()
-  }
+  console.log('[probe5] NO REPLY CHANNEL. tried: ' + tried.join(' | '))
+  return null
 }
+
+api.onFrontendMessage(async function (payload) {
+  console.log('[probe5] request:', JSON.stringify(payload))
+
+  var chatId = (payload && payload.chatId) || activeChatId
+  var result
+
+  if (!chatId) {
+    result = { type: 'history', ok: false, error: 'no chatId (frontend sent none, no CHAT_SWITCHED yet)' }
+  } else {
+    try {
+      var msgs = await api.chat.getMessages(chatId)
+      console.log('[probe5] getMessages returned ' + ((msgs && msgs.length) || 0) + ' messages')
+      var slim = (msgs || []).slice(-12).map(function (m) {
+        return { id: m.id, role: m.role, content: String(m.content || '') }
+      })
+      result = { type: 'history', ok: true, chatId: chatId, count: (msgs || []).length, messages: slim }
+    } catch (e) {
+      console.log('[probe5] getMessages threw: ' + String(e))
+      result = { type: 'history', ok: false, error: String((e && e.message) || e) }
+    }
+  }
+
+  // Push it back (return value is ignored by the frontend, as v4 proved).
+  replyToFrontend(result)
+
+  // Also return it, in case some call path DOES use the return value.
+  return result
+})
+
+console.log('[probe5:backend] handler ready')
