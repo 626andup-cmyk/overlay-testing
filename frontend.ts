@@ -1,98 +1,60 @@
-import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
-
 /**
- * Overlay Probe — a deliberately tiny diagnostic extension.
+ * Overlay Probe v2 — zero dependencies, zero imports.
  *
- * It answers three questions, in order, and each one is visible on screen:
+ * v1 imported a type from 'lumiverse-spindle-types'. If that package isn't
+ * present in the repo, `bun build` can fail to resolve it and produce no
+ * bundle at all — which looks identical to "nothing rendered".
  *
- *   1. Does a frontend extension load and run at all on this device?
- *      -> proven by the small badge in the bottom-right corner.
- *         (This uses ctx.dom.inject, the same call the official
- *          "Frontend Only" example uses, so it is the safest possible probe.)
- *
- *   2. Does ctx.ui.mountApp() work, i.e. is app_manipulation actually granted?
- *      -> proven by the big translucent panel. The badge also reports it.
- *
- *   3. Does an 'app-overlay' mount stack BELOW the native chat input bar?
- *      -> answered by looking: the panel is see-through, so if the input bar
- *         paints on top of it, we can use a full-viewport overlay directly.
- *         If the panel covers the input bar instead, we'll size the overlay
- *         to the message area by hand in the real extension.
- *
- * Nothing here is interactive and the panel ignores taps (pointer-events:none),
- * so the app stays fully usable while the probe is installed.
+ * This version imports nothing, so it cannot fail that way. A pre-built
+ * dist/frontend.js also ships alongside it, so no build step is required.
  */
-export function setup(ctx: SpindleFrontendContext) {
-  const status: string[] = []
+export function setup(ctx) {
+  const status = []
 
-  const removeStyle = ctx.dom.addStyle(`
-    .probe-badge {
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      max-width: 60vw;
-      padding: 8px 12px;
-      background: var(--lumiverse-fill-subtle);
-      border: 1px solid var(--lumiverse-border);
-      border-radius: var(--lumiverse-radius);
-      font-size: 11px;
-      line-height: 1.45;
-      color: var(--lumiverse-text);
-      z-index: 2147483647;
-      pointer-events: none;
-      white-space: pre-line;
-    }
-    .probe-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(168, 85, 247, 0.18);
-      border: 3px dashed rgba(168, 85, 247, 0.9);
-      box-sizing: border-box;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .probe-overlay span {
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.55);
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-    }
-  `)
+  // Plain console logs so anything visible in a devtools/log view shows up too.
+  console.log('[overlay-probe] setup() called')
 
-  // --- Question 1: does the extension run? -------------------------------
-  // If this badge never appears, the problem is loading/building, not the UI API.
-  ctx.dom.inject('body', '<div class="probe-badge">Probe: frontend loaded ✓</div>')
-  status.push('frontend loaded ✓')
+  const removeStyle = ctx.dom.addStyle(
+    '.probe-badge{position:fixed;bottom:16px;right:16px;max-width:60vw;' +
+      'padding:8px 12px;background:#a855f7;border:2px solid #fff;' +
+      'border-radius:10px;font-size:12px;line-height:1.45;color:#fff;' +
+      'z-index:2147483647;pointer-events:none;white-space:pre-line}' +
+      '.probe-overlay{position:fixed;inset:0;background:rgba(168,85,247,.18);' +
+      'border:3px dashed rgba(168,85,247,.9);box-sizing:border-box;' +
+      'pointer-events:none;display:flex;align-items:center;justify-content:center}' +
+      '.probe-overlay span{padding:8px 14px;border-radius:999px;' +
+      'background:rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:700}'
+  )
+
+  // --- Question 1: does the extension run? -----------------------------
+  ctx.dom.inject('body', '<div class="probe-badge">Probe: frontend loaded</div>')
+  status.push('frontend loaded OK')
+  console.log('[overlay-probe] badge injected')
 
   const badge = ctx.dom.query('.probe-badge')
-  const render = () => {
+  const render = function () {
     if (badge) badge.textContent = 'Probe:\n' + status.join('\n')
   }
 
-  // --- Questions 2 and 3: does mountApp work, and how does it stack? -----
-  let mount: { root: HTMLElement; destroy: () => void } | null = null
+  // --- Questions 2 and 3: mountApp, and how does it stack? --------------
+  let mount = null
   try {
-    mount = ctx.ui.mountApp({
-      className: 'probe-mount',
-      position: 'app-overlay',
-    })
+    mount = ctx.ui.mountApp({ className: 'probe-mount', position: 'app-overlay' })
     mount.root.innerHTML =
-      '<div class="probe-overlay"><span>app-overlay mount ✓</span></div>'
-    status.push('mountApp ✓')
-    status.push('Can you still see the input bar?')
+      '<div class="probe-overlay"><span>app-overlay mount OK</span></div>'
+    status.push('mountApp OK')
+    status.push('Input bar still visible?')
+    console.log('[overlay-probe] mountApp succeeded')
   } catch (err) {
-    // Most likely cause: app_manipulation not granted by the admin toggle.
-    status.push('mountApp ✗ — ' + String((err as Error)?.message ?? err))
+    const msg = err && err.message ? err.message : String(err)
+    status.push('mountApp FAILED: ' + msg)
+    console.log('[overlay-probe] mountApp failed:', msg)
   }
 
   render()
 
-  return () => {
-    mount?.destroy()
+  return function () {
+    if (mount) mount.destroy()
     removeStyle()
     ctx.dom.cleanup()
   }
