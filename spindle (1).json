@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "name": "Overlay Probe",
+  "identifier": "overlay_probe",
+  "author": "626andup-cmyk",
+  "github": "https://github.com/626andup-cmyk/lumi-overlay-probe",
+  "homepage": "https://github.com/626andup-cmyk/lumi-overlay-probe",
+  "description": "Diagnostic: checks that a frontend extension loads and that an app-overlay mount renders below the native input bar.",
+  "permissions": ["app_manipulation"],
+  "entry_frontend": "dist/frontend.js"
+}
